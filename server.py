@@ -312,9 +312,20 @@ def _authenticate(authorization: Optional[str]) -> dict:
             detail={
                 "error":   "Invalid API key",
                 "message": "This key was not found. Get a new key at /keys/request.",
-                "get_key": "POST https://yourdomain.com/keys/request",
+                "get_key": "POST https://mcp-site.com/keys/request",
             }
         )
+
+    # Check if key is suspended due to payment failure
+    if customer.get("suspended"):
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error":   "Payment required",
+                "message": "Your key is suspended due to a failed payment. Update your payment method at https://mcp-site.com",
+            }
+        )
+
     return {**customer, "api_key": key}
 
 
@@ -522,6 +533,17 @@ def terms():
         return PlainTextResponse(DISCLAIMER_FULL)
     except ImportError:
         return {"error": "Terms not found"}
+
+
+@app.get("/privacy")
+def privacy():
+    """Returns the privacy policy as plain text."""
+    try:
+        from privacy import PRIVACY_POLICY
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(PRIVACY_POLICY)
+    except ImportError:
+        return {"error": "Privacy policy not found"}
 
 
 

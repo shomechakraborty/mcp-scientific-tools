@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from server import registry, app
 from registration import mount_registration_routes, get_issued_keys
+from billing import mount_billing_routes
 from tools.literature_search import register as reg_literature
 from tools.compound_lookup    import register as reg_compound
 from tools.gpu_spot_prices    import register as reg_gpu
@@ -38,6 +39,9 @@ from tools.analytics          import register as reg_analytics
 
 # Mount registration routes (self-serve key issuance)
 mount_registration_routes(app)
+
+# Mount billing routes (landing page, Stripe checkout)
+mount_billing_routes(app)
 
 # Load persisted keys from database into memory on startup
 from registration import _load_keys_from_db

@@ -210,6 +210,17 @@ These terms shall be governed by and construed in accordance with the laws
 of the United States and the state in which the Service Operator is domiciled,
 without regard to conflict of law provisions.
 
+To the extent permitted by applicable local, state, national, and international
+law, the limitations and exclusions in these terms apply in full. Users and
+operators are solely responsible for ensuring their use of this service
+complies with their own applicable local, state, national, and international
+laws and regulations. The Service Operator makes no representation that the
+service is appropriate or available for use in any particular jurisdiction.
+
+Nothing in these terms limits any rights you may have under applicable
+mandatory consumer protection laws in your jurisdiction that cannot be
+excluded by contract.
+
 --------------------------------------------------------------------------------
 12. CONTACT
 --------------------------------------------------------------------------------
