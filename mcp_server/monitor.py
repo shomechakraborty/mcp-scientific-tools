@@ -134,8 +134,45 @@ def check_ssl_expiry() -> tuple[bool, str]:
         return False, f"SSL check failed: {e}"
 
 
+# Cached monitor key — issued once, reused for all subsequent checks
+_monitor_key: str = ""
+
+
 def check_key_issuance() -> tuple[bool, str]:
-    """Check that /keys/request responds correctly."""
+    """
+    Check that /keys/request responds correctly.
+    Issues a key once on first check, then reuses it — avoids
+    creating a new key every 5 minutes in the database.
+    """
+    global _monitor_key
+
+    # If we already have a monitor key, just verify it works
+    if _monitor_key:
+        try:
+            payload = json.dumps({
+                "jsonrpc": "2.0", "id": 99, "method": "tools/list"
+            }).encode()
+            req = urllib.request.Request(
+                f"{BASE_URL}/mcp",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {_monitor_key}",
+                    "User-Agent": "MCP-Monitor/1.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+                if data.get("result"):
+                    return True, "Key valid, tools/list responding"
+                return False, f"Unexpected response: {data}"
+        except Exception as e:
+            # Key may have expired — issue a new one
+            _monitor_key = ""
+            return False, f"Monitor key check failed: {e}"
+
+    # First run — issue a new monitor key
     try:
         payload = json.dumps({
             "email": "monitor@mcp-site.com",
@@ -154,7 +191,8 @@ def check_key_issuance() -> tuple[bool, str]:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
             if "api_key" in data and data["api_key"].startswith("mcp-key-"):
-                return True, "Key issuance working"
+                _monitor_key = data["api_key"]
+                return True, "Key issued and cached for future checks"
             return False, f"Unexpected response: {list(data.keys())}"
     except Exception as e:
         return False, f"Key issuance failed: {e}"
