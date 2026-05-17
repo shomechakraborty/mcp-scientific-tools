@@ -46,6 +46,18 @@ _agreements: dict[str, dict] = {}
 _keys_issued: dict[str, dict] = {}
 
 
+def _load_keys_from_db() -> None:
+    """Load all persisted keys into memory on startup."""
+    try:
+        from db import load_all_keys
+        loaded = load_all_keys()
+        _keys_issued.update(loaded)
+        if loaded:
+            log.info("Loaded %d keys from database", len(loaded))
+    except Exception as exc:
+        log.warning("Could not load keys from database: %s", exc)
+
+
 def issue_key(name: str, email: str, use_case: str, ip_address: str, user_agent: str) -> dict:
     api_key      = f"mcp-key-{uuid.uuid4().hex[:20]}"
     agreement_id = f"agr-{uuid.uuid4().hex[:12]}"
@@ -57,7 +69,7 @@ def issue_key(name: str, email: str, use_case: str, ip_address: str, user_agent:
     except ImportError:
         terms_hash = "unavailable"
 
-    _agreements[agreement_id] = {
+    agreement_record = {
         "agreement_id":     agreement_id,
         "api_key":          api_key,
         "name":             name,
@@ -71,8 +83,9 @@ def issue_key(name: str, email: str, use_case: str, ip_address: str, user_agent:
         "binding_sentence": BINDING_SENTENCE,
         "agreement_method": "api_voluntary_use",
     }
+    _agreements[agreement_id] = agreement_record
 
-    _keys_issued[api_key] = {
+    key_record = {
         "customer_id":                 f"cust-{uuid.uuid4().hex[:8]}",
         "stripe_customer_id":          f"cus_pending_{uuid.uuid4().hex[:8]}",
         "stripe_subscription_item_id": f"si_pending_{uuid.uuid4().hex[:8]}",
@@ -83,6 +96,15 @@ def issue_key(name: str, email: str, use_case: str, ip_address: str, user_agent:
         "name":                        name,
         "email":                       email,
     }
+    _keys_issued[api_key] = key_record
+
+    # Persist to database so keys survive server restarts
+    try:
+        from db import save_key, save_agreement
+        save_key({"api_key": api_key, **key_record})
+        save_agreement(agreement_record)
+    except Exception as exc:
+        log.warning("Database persist failed: %s", exc)
 
     log.info("Key issued: %s  email=%s  ip=%s", agreement_id, email, ip_address)
 

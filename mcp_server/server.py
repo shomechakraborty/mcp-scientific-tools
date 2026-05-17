@@ -429,8 +429,7 @@ async def mcp_endpoint(request: MCPRequest, authorization: str = Header(None)):
             )
             stripe_record_id = billing_result.get("id")
 
-        # Record in tracker
-        tracker.record(CallRecord(
+        call_record = CallRecord(
             call_id=call_id,
             customer_id=customer["customer_id"],
             tool_name=tool_name,
@@ -439,13 +438,42 @@ async def mcp_endpoint(request: MCPRequest, authorization: str = Header(None)):
             success=success,
             error=error_msg,
             stripe_record_id=stripe_record_id,
-        ))
+        )
+        tracker.record(call_record)
+
+        # Persist call to database for revenue reconciliation
+        try:
+            from db import save_call, update_tool_health
+            save_call({
+                "call_id":     call_id,
+                "customer_id": customer["customer_id"],
+                "tool_name":   tool_name,
+                "price_usd":   tool.price_per_call_usd if success else 0,
+                "duration_ms": round(duration_ms, 2),
+                "success":     success,
+                "error":       error_msg,
+                "stripe_id":   stripe_record_id,
+                "timestamp":   datetime.now(timezone.utc).isoformat(),
+            })
+            update_tool_health(tool_name, success, duration_ms, error_msg or "")
+        except Exception as exc:
+            log.warning("DB call log failed: %s", exc)
+
+        # Validate response before delivering to agent
+        validation_warning = ""
+        if success and result:
+            try:
+                from validator import validate
+                _, validation_warning = validate(tool_name, result)
+            except Exception:
+                pass
 
         log.info(
-            "Tool %-32s  customer=%-20s  %s  %.0fms  $%.4f",
+            "Tool %-32s  customer=%-20s  %s  %.0fms  $%.4f%s",
             tool_name, customer["customer_id"],
             "OK" if success else "ERR",
             duration_ms, tool.price_per_call_usd if success else 0,
+            f"  WARN:{validation_warning}" if validation_warning else "",
         )
 
         if not success:
@@ -520,7 +548,33 @@ def stats(authorization: str = Header(None)):
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
-    log.info("Stripe webhook received")
+
+    # Verify webhook signature to reject fake events
+    if STRIPE_WEBHOOK_SECRET and not STRIPE_WEBHOOK_SECRET.startswith("whsec_demo"):
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET_KEY
+            event = _stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+            event_type = event["type"]
+        except Exception as exc:
+            log.warning("Stripe webhook signature invalid: %s", exc)
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    else:
+        try:
+            event_type = json.loads(payload).get("type", "unknown")
+        except Exception:
+            event_type = "unknown"
+
+    log.info("Stripe webhook: %s", event_type)
+
+    if event_type == "invoice.payment_failed":
+        # In production: suspend key for the customer
+        log.warning("Payment failed event received")
+    elif event_type == "invoice.paid":
+        log.info("Payment succeeded event received")
+
     return {"received": True}
 
 

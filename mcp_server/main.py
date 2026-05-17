@@ -39,6 +39,10 @@ from tools.analytics          import register as reg_analytics
 # Mount registration routes (self-serve key issuance)
 mount_registration_routes(app)
 
+# Load persisted keys from database into memory on startup
+from registration import _load_keys_from_db
+_load_keys_from_db()
+
 # Register all tools
 reg_literature(registry)
 reg_compound(registry)
